@@ -10,10 +10,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "firebase": "^11.10.0",
     "lottie-react": "^2.4.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "react-hot-toast": "^2.5.2"
+    "react-hot-toast": "^2.5.2",
+    "ytdl-core": "^4.11.5"
   },
   "devDependencies": {
     "@eslint/js": "^9.29.0",

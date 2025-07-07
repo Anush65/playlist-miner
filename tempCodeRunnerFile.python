@@ -1,0 +1,79 @@
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
+from openpyxl import Workbook, load_workbook
+import os
+
+# Globals
+excel_file = None
+
+def choose_file():
+    global excel_file
+    file_path = filedialog.asksaveasfilename(
+        defaultextension=".xlsx",
+        filetypes=[("Excel files", "*.xlsx")],
+        title="Choose Excel File to Save"
+    )
+    if file_path:
+        excel_file = file_path
+        if not os.path.exists(excel_file):
+            os.makedirs(os.path.dirname(excel_file), exist_ok=True)
+            wb = Workbook()
+            ws = wb.active
+            ws.append(["Name", "Age", "Gender"])
+            wb.save(excel_file)
+        messagebox.showinfo("File Selected", f"Saving to:\n{excel_file}")
+
+def submit_data():
+    if not excel_file:
+        messagebox.showwarning("File Not Selected", "Please choose an Excel file first.")
+        return
+
+    name = name_var.get()
+    age = age_var.get()
+    gender = gender_var.get()
+
+    if not name or not age or not gender:
+        messagebox.showwarning("Input Error", "All fields are required.")
+        return
+
+    try:
+        age = int(age)
+    except ValueError:
+        messagebox.showerror("Invalid Input", "Age must be a number.")
+        return
+
+    wb = load_workbook(excel_file)
+    ws = wb.active
+    ws.append([name, age, gender])
+    wb.save(excel_file)
+
+    messagebox.showinfo("Success", "Data written to Excel!")
+    name_var.set("")
+    age_var.set("")
+    gender_var.set("")
+
+# GUI setup
+root = tk.Tk()
+root.title("Generalized Excel Data Entry")
+root.geometry("320x260")
+
+# Variables
+name_var = tk.StringVar()
+age_var = tk.StringVar()
+gender_var = tk.StringVar()
+
+# Widgets
+tk.Button(root, text="Choose Excel File", command=choose_file).pack(pady=10)
+
+tk.Label(root, text="Name").pack()
+tk.Entry(root, textvariable=name_var).pack()
+
+tk.Label(root, text="Age").pack()
+tk.Entry(root, textvariable=age_var).pack()
+
+tk.Label(root, text="Gender").pack()
+ttk.Combobox(root, textvariable=gender_var, values=["Male", "Female", "Other"], state="readonly").pack()
+
+tk.Button(root, text="Submit", command=submit_data).pack(pady=20)
+
+root.mainloop()

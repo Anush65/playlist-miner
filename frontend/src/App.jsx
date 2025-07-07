@@ -1,65 +1,36 @@
 import { useState, useEffect } from "react"
 import toast, { Toaster } from "react-hot-toast"
+import "./index.css"
+import { auth } from "./firebase"
+import { signOut } from "firebase/auth"
+import { useUser } from "./UserContext"
+import Auth from "./Auth"
+
+// Extracts video ID from any YouTube URL
+function getYoutubeID(url) {
+  const regex =
+    /(?:youtube\.com.*(?:\/|v=|u\/\w\/|embed\/|watch\?v=)|youtu\.be\/)([^#\&\?]*).*/
+  const match = url.match(regex)
+  return match && match[1].length === 11 ? match[1] : null
+}
 
 function App() {
-  const [showSplash, setShowSplash] = useState(true)
+  const { user } = useUser()
+
   const [query, setQuery] = useState("")
   const [format, setFormat] = useState("mp3")
   const [downloadLink, setDownloadLink] = useState("")
-  const [previewId, setPreviewId] = useState(null)
-
-  // Splash screen (2s)
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setShowSplash(false)
-    }, 2000)
-    return () => clearTimeout(timer)
-  }, [])
-
-  // Detect YouTube link or fetch preview from backend
-  useEffect(() => {
-    const delayDebounce = setTimeout(() => {
-      const ytRegex = /(?:youtube\.com\/watch\?v=|youtu\.be\/)([^\s&]+)/
-
-      const match = query.match(ytRegex)
-      if (match && match[1]) {
-        setPreviewId(match[1])
-      } else {
-        // If it's a search term, hit the backend preview route
-        if (query.trim()) {
-          fetch("http://localhost:8000/preview", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/x-www-form-urlencoded",
-            },
-            body: new URLSearchParams({ query }),
-          })
-            .then((res) => res.json())
-            .then((data) => {
-              if (data.status === "success") {
-                setPreviewId(data.videoId)
-              } else {
-                setPreviewId(null)
-              }
-            })
-            .catch(() => setPreviewId(null))
-        } else {
-          setPreviewId(null)
-        }
-      }
-    }, 500)
-
-    return () => clearTimeout(delayDebounce)
-  }, [query])
+  const [preview, setPreview] = useState(null)
+  const [isDownloading, setIsDownloading] = useState(false)
 
   const handleDownload = async () => {
     if (!query) {
-      toast.error("❗ Please enter a search query or YouTube URL")
+      toast.error("Enter a song or YouTube link!")
       return
     }
 
-    toast.loading("⏳ Downloading...")
-    setDownloadLink("")
+    setIsDownloading(true)
+    toast.loading("Downloading...")
 
     const formData = new FormData()
     formData.append("query", query)
@@ -73,95 +44,148 @@ function App() {
 
       const data = await res.json()
       toast.dismiss()
+      setIsDownloading(false)
 
       if (data.status === "success") {
+        toast.success("Download ready!")
         setDownloadLink(`http://localhost:8000/file/${data.filename}`)
-        toast.success("✅ Download Ready!")
       } else {
-        toast.error("❌ Error: " + data.error)
+        toast.error(data.error || "Download failed")
       }
-    } catch (error) {
+    } catch (err) {
       toast.dismiss()
-      toast.error("❌ Could not connect to backend.")
+      toast.error("Backend not reachable")
+      setIsDownloading(false)
     }
   }
 
-  if (showSplash) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-white text-black">
-        <h1 className="text-4xl font-bold animate-pulse">🎧 PlaylistMiner</h1>
-      </div>
-    )
+  const handleLogout = async () => {
+    await signOut(auth)
+    toast.success("Logged out!")
   }
 
+  useEffect(() => {
+    const isYouTubeUrl = query.includes("youtube.com") || query.includes("youtu.be")
+    if (!isYouTubeUrl) {
+      setPreview(null)
+      return
+    }
+
+    const fetchPreview = async () => {
+      try {
+        const res = await fetch(
+          `https://www.youtube.com/oembed?url=${encodeURIComponent(query)}&format=json`
+        )
+        const data = await res.json()
+        setPreview(data)
+      } catch (err) {
+        setPreview(null)
+      }
+    }
+
+    fetchPreview()
+  }, [query])
+
+  if (!user) return <Auth />
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-white text-black px-4">
+    <div className="min-h-screen bg-gradient-to-br from-purple-600 via-indigo-700 to-blue-900 text-white font-sans flex items-center justify-center px-4 py-10 sm:py-20">
       <Toaster />
-      <div className="max-w-md w-full p-6 bg-gray-100 rounded shadow animate-fadeIn">
-        <h1 className="text-3xl font-bold mb-6 text-center">🎧 PlaylistMiner</h1>
+      <div className="w-full max-w-2xl bg-white/10 backdrop-blur-lg p-6 sm:p-10 rounded-2xl shadow-xl">
+        <div className="flex justify-between mb-4 text-sm">
+          <span className="text-white/80">👋 {user.email}</span>
+          <button onClick={handleLogout} className="text-red-400 hover:underline">
+            🚪 Logout
+          </button>
+        </div>
+
+        <h1 className="text-4xl sm:text-5xl font-extrabold mb-6 text-center flex items-center justify-center gap-2">
+          🎧 <span className="text-white">PlaylistMiner</span>
+        </h1>
 
         <input
           type="text"
           placeholder="Enter song name or YouTube link"
-          className="w-full p-2 mb-4 border rounded"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          className="w-full px-5 py-4 rounded-lg text-black text-lg mb-6 focus:outline-none focus:ring-2 focus:ring-purple-400"
         />
 
-        <p className="text-sm mb-2 font-medium text-gray-600 text-center">
-          Choose Format:
-        </p>
-
-        <div className="flex justify-center gap-4 mb-4">
-          <button
-            onClick={() => setFormat("mp3")}
-            className={`px-4 py-2 rounded border font-semibold flex items-center gap-2 transition-all duration-200
-              ${format === "mp3"
-                ? "bg-blue-600 text-white scale-105 shadow-md"
-                : "bg-gray-200 text-black hover:bg-gray-300"}`}
-          >
-            🎵 MP3 {format === "mp3" && "✅"}
-          </button>
-
-          <button
-            onClick={() => setFormat("mp4")}
-            className={`px-4 py-2 rounded border font-semibold flex items-center gap-2 transition-all duration-200
-              ${format === "mp4"
-                ? "bg-blue-600 text-white scale-105 shadow-md"
-                : "bg-gray-200 text-black hover:bg-gray-300"}`}
-          >
-            🎥 MP4 {format === "mp4" && "✅"}
-          </button>
-        </div>
-
-        {previewId && (
-          <div className="mb-4">
+        {preview && (
+          <div className="relative pb-[56.25%] h-0 overflow-hidden rounded-lg mb-6">
             <iframe
-              className="w-full aspect-video rounded"
-              src={`https://www.youtube.com/embed/${previewId}`}
-              title="Preview"
+              className="absolute top-0 left-0 w-full h-full"
+              src={`https://www.youtube.com/embed/${getYoutubeID(query)}`}
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
               allowFullScreen
+              title="YouTube preview"
             ></iframe>
           </div>
         )}
 
+        <label className="block text-white text-md mb-2">Choose Format:</label>
+        <div className="flex space-x-4 mb-6">
+          <button
+            className={`flex-1 py-3 rounded-lg font-semibold transition ${
+              format === "mp3"
+                ? "bg-green-500 hover:bg-green-600 text-white"
+                : "bg-white hover:bg-green-100 text-gray-800"
+            }`}
+            onClick={() => setFormat("mp3")}
+          >
+            🎵 MP3
+          </button>
+          <button
+            className={`flex-1 py-3 rounded-lg font-semibold transition ${
+              format === "mp4"
+                ? "bg-blue-500 hover:bg-blue-600 text-white"
+                : "bg-white hover:bg-blue-100 text-gray-800"
+            }`}
+            onClick={() => setFormat("mp4")}
+          >
+            🎬 MP4
+          </button>
+        </div>
+
         <button
           onClick={handleDownload}
-          className="w-full bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded"
+          className="w-full bg-pink-500 hover:bg-pink-600 text-white text-lg py-4 rounded-lg font-bold transition flex justify-center items-center"
+          disabled={isDownloading}
         >
-          Download
+          {isDownloading ? (
+            <svg
+              className="animate-spin h-6 w-6 text-white"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              ></circle>
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+              ></path>
+            </svg>
+          ) : (
+            "⬇️ Download"
+          )}
         </button>
 
         {downloadLink && (
-          <div className="mt-4 text-center">
+          <div className="mt-6 text-center">
             <a
               href={downloadLink}
               target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue-600 underline"
+              className="text-white underline font-medium"
             >
-              👉 Click to download
+              👉 Click here to download your file
             </a>
           </div>
         )}
